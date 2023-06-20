@@ -37,12 +37,13 @@ int main(int argc, char **argv) {
         size_t http_status_length = 0;
         FILE *connection_handle = fdopen(connection, "r+");
         getline(&http_status, &http_status_length, connection_handle);
+        printf("http_status = %s", http_status);
         char *response_status;
 
         char *http_method, *http_path;
         if (parse_http_status_line(http_status, &http_method, &http_path, NULL) < 0) {
-            response_status = "401 BAD REQUEST";
-            fprintf(connection_handle, "HTTP/1.1 %s\r\nContent-Length: 16\r\n\r\n401 Bad Request\n", response_status);
+            response_status = "400 BAD REQUEST";
+            fprintf(connection_handle, "HTTP/1.1 %s\r\nContent-Length: 16\r\n\r\n400 Bad Request\n", response_status);
             fflush(connection_handle);
             goto cleanup;
         }
