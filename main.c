@@ -42,7 +42,7 @@ int main(int argc, char **argv) {
         char *http_method, *http_path;
         if (parse_http_status_line(http_status, &http_method, &http_path, NULL) < 0) {
             response_status = "401 BAD REQUEST";
-            fprintf(connection_handle, "HTTP/1.1 401 BAD REQUEST\r\nContent-Length: 15\r\n\r\n401 Bad Request");
+            fprintf(connection_handle, "HTTP/1.1 %s\r\nContent-Length: 16\r\n\r\n401 Bad Request\n", response_status);
             fflush(connection_handle);
             goto cleanup;
         }
@@ -72,7 +72,7 @@ int main(int argc, char **argv) {
         FILE *file;
         if ((file = fopen(relative_filepath, "r")) == NULL) {
             response_status = "404 NOT FOUND";
-            fprintf(connection_handle, "HTTP/1.1 404 NOT FOUND\r\nContent-Length: 13\r\n\r\n404 Not Found");
+            fprintf(connection_handle, "HTTP/1.1 %s\r\nContent-Length: 14\r\n\r\n404 Not Found\n", response_status);
             fflush(connection_handle);
             goto cleanup;
         }
