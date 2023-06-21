@@ -12,16 +12,19 @@
 #define assert_ok(e) ({int x = (e); if (x < 0) { printf("%s:%d: ", __FILE__, __LINE__); fflush(stdout); perror(#e); abort(); } x;})
 #define DEFAULT_HOST "127.0.0.1"
 #define DEFAULT_PORT 1233
-#define FILE_BUFFER_SIZE 4096
-#define RECV_BUFFER_SIZE 4096
-
+#define FILE_BUFFER_SIZE 8192
+#define MAX_HEADER_SIZE 8192
 
 int create_ipv4_socket_and_listen(char *host, uint16_t port);
-int parse_http_status_line(char *status_line, char **method, char **path, char **version);
 size_t read_filesize(FILE *file);
 int is_directory(const char *path);
 int render_directory_as_html(char **html, size_t *html_length, DIR *d, const char *path);
 void log_http_request_response(char *method, char *path, char *response_status);
+
+const char response_200_ok[] = "HTTP/1.1 200 OK\r\nContent-Length: ";
+const char response_200_ok_html[] = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: ";
+const char response_400_bad_request[] = "HTTP/1.1 400 BAD REQUEST\r\nContent-Length: 16\r\n\r\n400 Bad Request\n";
+const char response_404_not_found[] = "HTTP/1.1 404 NOT FOUND\r\nContent-Length: 14\r\n\r\n404 Not Found\n";
 
 int main(int argc, char **argv) {
     char *host = DEFAULT_HOST;
@@ -34,20 +37,30 @@ int main(int argc, char **argv) {
 
     while (1) {
         int connection = accept(sock, NULL, NULL);
-        char http_status[RECV_BUFFER_SIZE];
-        read(connection, http_status, RECV_BUFFER_SIZE);
+        char http_headers[MAX_HEADER_SIZE];
+        size_t header_size = 0;
+        if ((header_size = read(connection, http_headers, MAX_HEADER_SIZE)) <= 0) {
+            close(connection);
+            continue;
+        }
+        char *http_method = http_headers;
+        char *http_path = NULL;
+        for (int i = 0; i < MAX_HEADER_SIZE; ++i) {
+            if (http_headers[i] == ' ') {
+                http_headers[i] = 0;
+                if (http_path == NULL) http_path = &http_headers[i+1];
+            }
+            if (http_headers[i] == '\r' || http_headers[i] == '\n') {
+                http_headers[i] = 0;
+                break;
+            }
+        }
 
-        char *response = NULL;
-        size_t response_length = 0;
-        FILE *response_stream = open_memstream(&response, &response_length);
-
-        char *http_method, *http_path;
-        if (parse_http_status_line(http_status, &http_method, &http_path, NULL) < 0) {
-            log_http_request_response(http_method, http_path, "400 BAD REQUEST");
-            fprintf(response_stream, "HTTP/1.1 400 BAD REQUEST\r\nContent-Length: 16\r\n\r\n400 Bad Request\n");
-            fflush(response_stream);
-            write(connection, response, response_length);
-            goto cleanup;
+        if (http_path == NULL) {
+            log_http_request_response(http_headers, "", "400 BAD REQUEST");
+            write(connection, response_400_bad_request, (sizeof response_400_bad_request) - 1);
+            close(connection);
+            continue;
         }
 
         // Open requested file for reading if it exists
@@ -59,30 +72,32 @@ int main(int argc, char **argv) {
             DIR *dir = opendir(relative_filepath);
             render_directory_as_html(&html, &html_length, dir, http_path);
             closedir(dir);
-            fprintf(response_stream, "HTTP/1.1 200 OK\r\nContent-Type: text/html\nContent-Length: %lu\r\n\r\n", html_length);
-            fwrite(html, 1, html_length, response_stream);
-            fflush(response_stream);
-            write(connection, response, response_length);
+
+            char *response_buffer;
+            size_t response_length = asprintf(&response_buffer, "%s%lu\r\n\r\n%s", response_200_ok_html, html_length, html);
+            write(connection, response_buffer, response_length);
             log_http_request_response(http_method, http_path, "200 OK");
+            free(response_buffer);
             free(html);
-            goto cleanup;
+            free(relative_filepath);
+            close(connection);
+            continue;
         }
 
         FILE *file;
         if ((file = fopen(relative_filepath, "r")) == NULL) {
-            fprintf(response_stream, "HTTP/1.1 404 NOT FOUND\r\nContent-Length: 14\r\n\r\n404 Not Found\n");
-            fflush(response_stream);
-            write(connection, response, response_length);
+            write(connection, response_404_not_found, (sizeof response_404_not_found) - 1);
             log_http_request_response(http_method, http_path, "404 NOT FOUND");
-            goto cleanup;
+            free(relative_filepath);
+            close(connection);
+            continue;
         }
 
         // Send HTTP Response Headers
         size_t filesize = read_filesize(file);
-        fprintf(response_stream, "HTTP/1.1 200 OK\r\nContent-Length: %lu\r\n\r\n", filesize);
-        fflush(response_stream);
-        write(connection, response, response_length);
-        log_http_request_response(http_method, http_path, "200 OK");
+        char *response_buffer;
+        size_t response_length = asprintf(&response_buffer, "%s%lu\r\n\r\n", response_200_ok, filesize);
+        write(connection, response_buffer, response_length);
 
         // Send file contents to socket
         char file_buffer[FILE_BUFFER_SIZE];
@@ -90,13 +105,11 @@ int main(int argc, char **argv) {
         while ((bytes_read = fread(file_buffer, 1, FILE_BUFFER_SIZE, file))) {
             write(connection, file_buffer, bytes_read);
         }
-        fclose(file);
 
-    cleanup:
+        log_http_request_response(http_method, http_path, "200 OK");
         free(relative_filepath);
+        fclose(file);
         close(connection);
-        fclose(response_stream);
-        free(response);
     }
 }
 
@@ -113,27 +126,6 @@ int create_ipv4_socket_and_listen(char *host, uint16_t port) {
     assert_ok(bind(sock, (struct sockaddr*)&listen_address, sizeof listen_address));
     assert_ok(listen(sock, listen_backlog));
     return sock;
-}
-
-int parse_http_status_line(char *status_line, char **method, char **path, char **version) {
-    if (status_line == NULL) return -1;
-    
-    char *_method, *_path, *_version, *tmp;
-    _method = status_line;
-    _path = strchr(_method, ' ');
-    if (_path == NULL) return -2;
-    _version = strchr(_path+1, ' ');
-    if (_version == NULL) return -2;
-
-    (_path++)[0] = 0;
-    (_version++)[0] = 0;
-    if ((tmp = strchr(_version, '\r'))) tmp[0] = 0;
-    if ((tmp = strchr(_version, '\n'))) tmp[0] = 0;
-    
-    if (method != NULL) *method = _method;
-    if (path != NULL) *path = _path;
-    if (version != NULL) *version = _version;
-    return 0;
 }
 
 size_t read_filesize(FILE *file) {
