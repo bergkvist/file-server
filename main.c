@@ -22,10 +22,10 @@ int is_directory(const char *path);
 int render_directory_as_html(char **html, size_t *html_length, DIR *d, const char *path);
 void urlencode(char *dst, const char *src);
 void urldecode(char *dst, const char *src);
-void log_http_request_response(char *method, char *path, char *response_status);
+void log_http_request_response(char *method, char *path, char *relative_filepath, char *response_status);
 
 const char response_200_ok[] = "HTTP/1.1 200 OK\r\nContent-Length: ";
-const char response_200_ok_html[] = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: ";
+const char response_200_ok_html[] = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF8\r\nContent-Length: ";
 const char response_400_bad_request[] = "HTTP/1.1 400 BAD REQUEST\r\nContent-Length: 16\r\n\r\n400 Bad Request\n";
 const char response_404_not_found[] = "HTTP/1.1 404 NOT FOUND\r\nContent-Length: 14\r\n\r\n404 Not Found\n";
 
@@ -60,7 +60,7 @@ int main(int argc, char **argv) {
         }
 
         if (http_path == NULL) {
-            log_http_request_response(http_headers, "", "400 BAD REQUEST");
+            log_http_request_response(http_headers, "", "", "400 BAD REQUEST");
             write(connection, response_400_bad_request, (sizeof response_400_bad_request) - 1);
             close(connection);
             continue;
@@ -81,7 +81,7 @@ int main(int argc, char **argv) {
             char *response_buffer;
             size_t response_length = asprintf(&response_buffer, "%s%lu\r\n\r\n%s", response_200_ok_html, html_length, html);
             write(connection, response_buffer, response_length);
-            log_http_request_response(http_method, http_path, "200 OK");
+            log_http_request_response(http_method, http_path, relative_filepath, "200 OK");
             free(response_buffer);
             free(html);
             free(relative_filepath);
@@ -92,7 +92,7 @@ int main(int argc, char **argv) {
         FILE *file;
         if ((file = fopen(relative_filepath, "r")) == NULL) {
             write(connection, response_404_not_found, (sizeof response_404_not_found) - 1);
-            log_http_request_response(http_method, http_path, "404 NOT FOUND");
+            log_http_request_response(http_method, http_path, relative_filepath, "404 NOT FOUND");
             free(relative_filepath);
             close(connection);
             continue;
@@ -111,7 +111,7 @@ int main(int argc, char **argv) {
             write(connection, file_buffer, bytes_read);
         }
 
-        log_http_request_response(http_method, http_path, "200 OK");
+        log_http_request_response(http_method, http_path, relative_filepath, "200 OK");
         free(relative_filepath);
         fclose(file);
         close(connection);
@@ -184,8 +184,8 @@ void urlencode(char *dst, const char *src) {
             c == '<' || c == '>' || c == '\\' || c == '^' ||
             c == '`' || c == '{' || c ==  '|' || c == '}'
         ) {
-            char hi = c >> 4;
-            char lo = c & 0x0F;
+            char hi = (c & 0xF0) >> 4;
+            char lo = (c & 0x0F);
             *dst++ = '%';
             *dst++ = hi + (hi < 10) * ('0') + (hi >= 10) * ('a' - 10);
             *dst++ = lo + (lo < 10) * ('0') + (lo >= 10) * ('a' - 10);
@@ -218,6 +218,6 @@ void urldecode(char *dst, const char *src) {
     *dst++ = 0;
 }
 
-void log_http_request_response(char *method, char *path, char *response_status) {
-    printf("[%s %s] => (%s)\n", method, path, response_status);
+void log_http_request_response(char *method, char *path, char *relative_filepath, char *response_status) {
+    printf("[%s %s] => %s (%s)\n", method, path, response_status, relative_filepath);
 }
