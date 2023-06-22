@@ -20,10 +20,10 @@ make file-server
 
 ## Install
 ```
-sudo cp ./file-server /usr/local/bin/
+make install
 ```
 
 ## Uninstall 
 ```
-sudo rm /usr/local/bin/file-server
+make uninstall
 ```
