@@ -75,7 +75,7 @@ int main(int argc, char **argv) {
             char *html;
             size_t html_length;
             DIR *dir = opendir(relative_filepath);
-            render_directory_as_html(&html, &html_length, dir, http_path);
+            render_directory_as_html(&html, &html_length, dir, &relative_filepath[1]);
             closedir(dir);
 
             char *response_buffer;
