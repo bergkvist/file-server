@@ -9,6 +9,7 @@
 #include <sys/types.h>
 #include <arpa/inet.h>
 #include <ctype.h>
+#include <limits.h>
 
 #define assert_ok(e) ({int x = (e); if (x < 0) { printf("%s:%d: ", __FILE__, __LINE__); fflush(stdout); perror(#e); abort(); } x;})
 #define DEFAULT_HOST "127.0.0.1"
@@ -27,6 +28,7 @@ void log_http_request_response(char *method, char *path, char *relative_filepath
 const char response_200_ok[] = "HTTP/1.1 200 OK\r\nContent-Length: ";
 const char response_200_ok_html[] = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF8\r\nContent-Length: ";
 const char response_400_bad_request[] = "HTTP/1.1 400 BAD REQUEST\r\nContent-Length: 16\r\n\r\n400 Bad Request\n";
+const char response_403_forbidden[] = "HTTP/1.1 403 FORBIDDEN\r\nContent-Length: 14\r\n\r\n403 Forbidden\n";
 const char response_404_not_found[] = "HTTP/1.1 404 NOT FOUND\r\nContent-Length: 14\r\n\r\n404 Not Found\n";
 const char response_413_payload_too_large[] = "HTTP/1.1 413 PAYLOAD TOO LARGE\r\nContent-Length: 21\r\n\r\n413 Payload Too Large\n";
 
@@ -35,6 +37,9 @@ int main(int argc, char **argv) {
     uint16_t port = DEFAULT_PORT;
     if (argc > 1) host = argv[1];
     if (argc > 2) port = strtol(argv[2], &argv[2], 10);
+    char index_path[PATH_MAX];
+    assert(realpath(".", index_path) != NULL);
+    printf("Serving directory %s\n", index_path);
 
     int sock = create_ipv4_socket_and_listen(host, port);
     printf("Listening on http://%s:%hu\n", host, port);
@@ -77,6 +82,24 @@ int main(int argc, char **argv) {
         char *relative_filepath = malloc(relative_filepath_length);
         relative_filepath[0] = '.';
         urldecode(&relative_filepath[1], http_path);
+
+        char absolute_filepath[PATH_MAX];
+        realpath(relative_filepath, absolute_filepath);
+        int illegal_path_traversal = 0;
+        for (int i = 0; i < PATH_MAX; ++i) {
+            if (index_path[i] == 0) break;
+            else if (index_path[i] != absolute_filepath[i]) {
+                illegal_path_traversal = 1;
+                break;
+            }
+        }
+        if (illegal_path_traversal) {
+            log_http_request_response(http_method, http_path, relative_filepath, "403 FORBIDDEN");
+            write(connection, response_403_forbidden, (sizeof response_403_forbidden) - 1);
+            free(relative_filepath);
+            close(connection);
+            continue;
+        }
 
         if (is_directory(relative_filepath)) {
             char *html;

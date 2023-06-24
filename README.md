@@ -9,7 +9,6 @@ File server written in C using socket API for Linux/macOS.
 ```
 
 ## Warnings
-- Does not protect against [path traversal attacks](https://owasp.org/www-community/attacks/Path_Traversal)
 - Does not set any HTTP cache headers
 
 
