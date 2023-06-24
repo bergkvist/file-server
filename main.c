@@ -28,8 +28,7 @@ const char response_200_ok[] = "HTTP/1.1 200 OK\r\nContent-Length: ";
 const char response_200_ok_html[] = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF8\r\nContent-Length: ";
 const char response_400_bad_request[] = "HTTP/1.1 400 BAD REQUEST\r\nContent-Length: 16\r\n\r\n400 Bad Request\n";
 const char response_404_not_found[] = "HTTP/1.1 404 NOT FOUND\r\nContent-Length: 14\r\n\r\n404 Not Found\n";
-const char response_413_entity_too_large[] = "HTTP/1.1 413 ENTITY TOO LARGE\r\nContent-Length: 21\r\n\r\n413 Entity Too Large\n";
-
+const char response_413_payload_too_large[] = "HTTP/1.1 413 PAYLOAD TOO LARGE\r\nContent-Length: 21\r\n\r\n413 Payload Too Large\n";
 
 int main(int argc, char **argv) {
     char *host = DEFAULT_HOST;
@@ -50,7 +49,7 @@ int main(int argc, char **argv) {
             continue;
         } else if (header_size == MAX_HEADER_SIZE + 1) {
             log_http_request_response(http_headers, "", "", "413 ENTITY TOO LARGE");
-            write(connection, response_413_entity_too_large, (sizeof response_413_entity_too_large) - 1);
+            write(connection, response_413_payload_too_large, (sizeof response_413_payload_too_large) - 1);
             close(connection);
             continue;
         }
